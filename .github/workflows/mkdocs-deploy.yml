@@ -1,0 +1,20 @@
+name: Deploy MkDocs site
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  docs:
+    uses: Dakata99/devtools/.github/workflows/mkdocs-pages.yml@main
+    with:
+      python-version: "3.12"
+      config-file: "mkdocs.yml"
+      site-dir: "site"

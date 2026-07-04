@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# TensorFlow builds - Python Virtual Environment Setup
+# This script creates and activates a Python virtual environment
+
+if [[ $(which uv) == "" ]]; then
+    # TODO: update installation guide for uv
+    echo "Please install uv (sudo apt install uv) and try again."
+    exit 1
+fi
+
+PROMPT=tf
+VENV=.$PROMPT
+export UV_PROJECT_ENVIRONMENT=$VENV
+uv venv $UV_PROJECT_ENVIRONMENT --prompt $PROMPT --clear
+source $UV_PROJECT_ENVIRONMENT/bin/activate
+uv sync --active --quiet
+
+# Enable command-line autocompletion for the `tf` command.
+eval "$(register-python-argcomplete tf)"
+
+export TFLITE_BUILDER_ROOT=$(git rev-parse --show-toplevel)

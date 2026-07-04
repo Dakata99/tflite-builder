@@ -1,0 +1,41 @@
+name: Build TensorFlow
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Download your repository into the runner
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: uv sync
+
+      # 4. Build TensorFlow Lite using uv
+      - name: Build TensorFlow
+        run: |
+          uv run tf clone --branch-tag v2.21.0
+          uv run tf build --branch-tag v2.21.0 --bazel
+          uv run tf install --branch-tag v2.21.0 --source bazel
+          uv run tf run --install-path $(pwd)/builds/v2.21.0--bazel/
+
+      # 5. Publish the artifacts so they can be downloaded
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tensorflow-build-v2.21.0--bazel
+          path: $(pwd)/builds/v2.21.0--bazel/
+          if-no-files-found: error
