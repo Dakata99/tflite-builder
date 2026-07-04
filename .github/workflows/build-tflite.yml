@@ -10,6 +10,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - version: "v2.21.0"
+            source: "bazel"
+            arch: "x86-64"
 
     steps:
       # 1. Download your repository into the runner
@@ -24,15 +30,15 @@ jobs:
       - name: Build TensorFlow
         run: |
           source setupenv
-          uv run tf clone --branch-tag v2.21.0
-          uv run tf build --branch-tag v2.21.0 --bazel
-          uv run tf install --branch-tag v2.21.0 --source bazel
-          uv run tf run --install-path $(pwd)/builds/v2.21.0--bazel/
+          uv run tf clone --branch-tag ${{ matrix.version }}
+          uv run tf build --branch-tag ${{ matrix.version }} --${{ matrix.source }}
+          uv run tf install --branch-tag ${{ matrix.version }} --source ${{ matrix.source }}
+          uv run tf run --install-path $(pwd)/builds/${{ matrix.version }}--${{ matrix.source }}--${{ matrix.arch }}/
 
       # 4. Publish the artifacts so they can be downloaded
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tensorflow-build-v2.21.0--bazel
-          path: ${{ github.workspace }}/builds/v2.21.0--bazel/
+          name: tensorflow-build-${{ matrix.version }}--${{ matrix.source }}--${{ matrix.arch }}
+          path: ${{ github.workspace }}/builds/${{ matrix.version }}--${{ matrix.source }}--${{ matrix.arch }}/
           if-no-files-found: error
