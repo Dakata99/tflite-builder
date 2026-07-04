@@ -20,19 +20,16 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      # 3. Install dependencies
-      - name: Install dependencies
-        run: uv sync
-
-      # 4. Build TensorFlow Lite using uv
+      # 3. Build TensorFlow Lite using uv
       - name: Build TensorFlow
         run: |
+          source setupenv
           uv run tf clone --branch-tag v2.21.0
           uv run tf build --branch-tag v2.21.0 --bazel
           uv run tf install --branch-tag v2.21.0 --source bazel
           uv run tf run --install-path $(pwd)/builds/v2.21.0--bazel/
 
-      # 5. Publish the artifacts so they can be downloaded
+      # 4. Publish the artifacts so they can be downloaded
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
