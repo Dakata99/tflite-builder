@@ -60,7 +60,7 @@ jobs:
           source setupenv
           uv run tf clone --branch-tag ${{ env.BUILD_VERSION }}
           uv run tf build --branch-tag ${{ env.BUILD_VERSION }} --${{ env.BUILD_SOURCE }}
-          uv run tf install --branch-tag ${{ env.BUILD_VERSION }} --source ${{ env.BUILD_SOURCE }}
+          uv run tf install --branch-tag ${{ env.BUILD_VERSION }} --build-system ${{ env.BUILD_SOURCE }}
           uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}/
 
       # 4. Publish the artifacts so they can be downloaded
