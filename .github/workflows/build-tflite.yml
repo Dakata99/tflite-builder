@@ -34,5 +34,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tensorflow-build-v2.21.0--bazel
-          path: $(pwd)/builds/v2.21.0--bazel/
+          path: ${{ github.workspace }}/builds/v2.21.0--bazel/
           if-no-files-found: error
