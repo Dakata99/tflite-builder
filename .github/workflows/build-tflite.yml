@@ -2,6 +2,27 @@ name: Build TensorFlow
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'TensorFlow version tag (e.g., v2.21.0)'
+        required: true
+        default: 'v2.21.0'
+        type: string
+      source:
+        description: 'Build system'
+        required: true
+        default: 'bazel'
+        type: choice
+        options:
+          - bazel
+          - cmake
+      arch:
+        description: 'Target architecture'
+        required: true
+        default: 'x86-64'
+        type: choice
+        options:
+          - x86-64
 
   push:
     branches:
@@ -16,6 +37,10 @@ jobs:
           - version: "v2.21.0"
             source: "bazel"
             arch: "x86-64"
+    env:
+      BUILD_VERSION: ${{ github.event.inputs.version || matrix.version }}
+      BUILD_SOURCE: ${{ github.event.inputs.source || matrix.source }}
+      BUILD_ARCH: ${{ github.event.inputs.arch || matrix.arch }}
 
     steps:
       # 1. Download your repository into the runner
@@ -30,15 +55,15 @@ jobs:
       - name: Build TensorFlow
         run: |
           source setupenv
-          uv run tf clone --branch-tag ${{ matrix.version }}
-          uv run tf build --branch-tag ${{ matrix.version }} --${{ matrix.source }}
-          uv run tf install --branch-tag ${{ matrix.version }} --source ${{ matrix.source }}
-          uv run tf run --install-path $(pwd)/builds/${{ matrix.version }}--${{ matrix.source }}--${{ matrix.arch }}/
+          uv run tf clone --branch-tag ${{ env.BUILD_VERSION }}
+          uv run tf build --branch-tag ${{ env.BUILD_VERSION }} --${{ env.BUILD_SOURCE }}
+          uv run tf install --branch-tag ${{ env.BUILD_VERSION }} --source ${{ env.BUILD_SOURCE }}
+          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}/
 
       # 4. Publish the artifacts so they can be downloaded
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tensorflow-build-${{ matrix.version }}--${{ matrix.source }}--${{ matrix.arch }}
-          path: ${{ github.workspace }}/builds/${{ matrix.version }}--${{ matrix.source }}--${{ matrix.arch }}/
+          name: tensorflow-build-${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}--${{ env.BUILD_ARCH }}
+          path: ${{ github.workspace }}/builds/${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}/
           if-no-files-found: error
