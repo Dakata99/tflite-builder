@@ -69,7 +69,7 @@ def main() -> None:
     ).completer = get_clones # TODO: make get_builds?
     install_parser.add_argument(
         "-s",
-        "--source",
+        "--build-system",
         type=str,
         required=True,
         choices=["cmake", "bazel"],
@@ -98,6 +98,6 @@ def main() -> None:
             # Hardcode Bazel target for the full TFLite shared library
             build_with_bazel(CLONES / args.branch_tag, BAZEL_TARGET)
     elif args.command == "install":
-        install_artifacts(args.source, args.branch_tag, args.install_path)
+        install_artifacts(args.build_system, args.branch_tag, args.install_path)
     elif args.command == "run":
         runner(args.install_path)

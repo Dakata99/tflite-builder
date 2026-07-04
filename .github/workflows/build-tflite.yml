@@ -37,6 +37,9 @@ jobs:
           - version: "v2.21.0"
             source: "bazel"
             arch: "x86-64"
+          - version: "v2.16.1"
+            source: "bazel"
+            arch: "x86-64"
     env:
       BUILD_VERSION: ${{ github.event.inputs.version || matrix.version }}
       BUILD_SOURCE: ${{ github.event.inputs.source || matrix.source }}
@@ -67,3 +70,4 @@ jobs:
           name: tensorflow-build-${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}--${{ env.BUILD_ARCH }}
           path: ${{ github.workspace }}/builds/${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}/
           if-no-files-found: error
+          retention-days: 1

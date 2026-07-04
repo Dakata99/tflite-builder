@@ -137,16 +137,20 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
     logging.info(f"Building TensorFlow with Bazel (target: {build_target})")
 
     branch_or_tag = repo_dir.name
-    bazel_output_base = (Path(repo_dir) / f"bazel-build-{branch_or_tag}").resolve()
-    repo_path = Path(repo_dir).resolve()
+    bazel_output_base = repo_dir / f"bazel-build-{branch_or_tag}"
 
     try:
         bazel = local["bazel"]
-        bazel[f"--output_base={bazel_output_base!s}", "build", build_target].with_cwd(repo_path).run_fg()
+        bazel[
+            f"--output_base={bazel_output_base!s}",
+            "build",
+            '-c', 'opt',
+            build_target
+        ].with_cwd(repo_dir).run_fg()
         logging.info("Bazel build completed successfully")
 
         # Stage the built artifacts into a single install folder
-        install_dir = repo_path / f"bazel-install-{branch_or_tag}"
+        install_dir = repo_dir / f"bazel-install-{branch_or_tag}"
         lib_dir = install_dir / "lib"
         include_dir = install_dir / "include"
         lib_dir.mkdir(parents=True, exist_ok=True)
@@ -171,7 +175,7 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
             logging.warning(f"Expected library not found: {lib_so}")
 
         # Copy TFLite headers
-        src_include = repo_path / "tensorflow" / "lite"
+        src_include = repo_dir / "tensorflow" / "lite"
         if src_include.exists():
             for root, _dirs, files in os.walk(src_include):
                 rel = Path(root).relative_to(src_include)
@@ -182,7 +186,7 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
                         shutil.copy2(os.path.join(root, f), str(dest_dir / f))
 
         # Copy tensorflow core headers (e.g. tensorflow/core/public/version.h)
-        core_src = repo_path / "tensorflow"
+        core_src = repo_dir / "tensorflow"
         if core_src.exists():
             for root, _dirs, files in os.walk(core_src):
                 rel = Path(root).relative_to(core_src)
@@ -193,7 +197,7 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
                         shutil.copy2(os.path.join(root, f), str(dest_dir / f))
 
         # Copy flatbuffers headers from bazel download cache
-        flatbuffers_search = repo_path / f"bazel-build-{branch_or_tag}" / "_deps"
+        flatbuffers_search = repo_dir / f"bazel-build-{branch_or_tag}" / "_deps"
         if flatbuffers_search.exists():
             for flatbuffers_src in flatbuffers_search.glob("flatbuffers-src/include"):
                 if flatbuffers_src.exists():
@@ -267,14 +271,6 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
             flatbuffers_dst.mkdir(parents=True, exist_ok=True)
             shutil.copytree(str(flatbuffers_src), str(flatbuffers_dst), dirs_exist_ok=True)
             logging.info(f"Copied flatbuffers headers to {flatbuffers_dst}")
-
-        # Copy absl headers if they exist
-        absl_src = build_dir / "external/com_google_absl/absl"
-        if absl_src.exists():
-            absl_dst = install_dst / "include/absl"
-            absl_dst.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(str(absl_src), str(absl_dst), dirs_exist_ok=True)
-            logging.info(f"Copied absl headers to {absl_dst}")
 
     logging.info(f"✓ Successfully installed to: {install_dst}")
     logging.info(f"  - Library: {lib_dst}")
