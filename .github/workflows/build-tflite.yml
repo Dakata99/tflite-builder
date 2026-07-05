@@ -68,7 +68,7 @@ jobs:
           uv run tf clone --branch-tag ${{ env.BUILD_VERSION }}
           uv run tf build --branch-tag ${{ env.BUILD_VERSION }} --bazel
           uv run tf install --branch-tag ${{ env.BUILD_VERSION }} --build-system bazel
-          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--bazel/
+          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--bazel/ --build-system bazel
 
       - name: Build TensorFlow with CMake
         if: ${{ env.BUILD_SYSTEM == 'cmake' }}
@@ -84,7 +84,10 @@ jobs:
           # TODO: find a better way to install the built files to a specific directory
           # Set up output directory
           OUT=$(pwd)/builds/${{ env.BUILD_VERSION }}--cmake/
-          mkdir -p $OUT/lib $OUT/include/tensorflow/lite $OUT/include/tensorflow/compiler
+          mkdir -p $OUT/lib \
+            $OUT/include/tensorflow/lite \
+            $OUT/include/tensorflow/core \
+            $OUT/include/tensorflow/compiler
 
           # Install shared library
           cp clones/${{ env.BUILD_VERSION }}/cmake-build-${{ env.BUILD_VERSION }}/libtensorflow-lite.so $OUT/lib/
@@ -103,13 +106,21 @@ jobs:
             --include='*.h' \
             --include='*.hpp' \
             --exclude='*' \
+            clones/${{ env.BUILD_VERSION }}/tensorflow/core/ \
+            $OUT/include/tensorflow/core/
+
+          rsync -a --prune-empty-dirs \
+            --include='*/' \
+            --include='*.h' \
+            --include='*.hpp' \
+            --exclude='*' \
             clones/${{ env.BUILD_VERSION }}/tensorflow/compiler/mlir/ \
             $OUT/include/tensorflow/compiler/mlir/
 
           # Install flatbuffers headers
           cp -r clones/${{ env.BUILD_VERSION }}/cmake-build-${{ env.BUILD_VERSION }}/flatbuffers/include/flatbuffers/ $OUT/include/
 
-          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--cmake/
+          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--cmake/ --build-system cmake
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

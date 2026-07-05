@@ -215,13 +215,13 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
     logging.info(f"  - Headers: {include_dst}")
 
 
-def runner(install_path: str) -> None:
+def runner(build_system: str, install_path: str) -> None:
     """
     Compile and run a C++ application linked against TensorFlow Lite.
 
     Args:
+        build_system: Build system to use (cmake or bazel)
         install_path: Path to the TensorFlow Lite install directory
-        output_path: Optional path for the compiled executable (defaults to ./main)
     """
     install_dir = Path(install_path).resolve()
 
@@ -254,7 +254,7 @@ def runner(install_path: str) -> None:
             "-o",
             str(RUNNER_FILE.with_name(output_exe)),
             f"-L{lib_dir}",
-            "-ltensorflow-lite",
+            "-ltensorflow-lite" if build_system == "cmake" else "-ltensorflowlite",
             "-Wl,-rpath," + str(lib_dir),  # Set RPATH for runtime library discovery
         ].run_fg()
         logging.info(f"✓ Successfully compiled to: {output_exe}")

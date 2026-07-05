@@ -73,7 +73,7 @@ def main() -> None:
         type=str,
         required=True,
         choices=["cmake", "bazel"],
-        help="Source build system (cmake or bazel)",
+        help="Build system to use (cmake or bazel)",
     )
     install_parser.add_argument(
         "-i", "--install-path", type=Path, help="Custom destination install path."
@@ -81,6 +81,14 @@ def main() -> None:
 
     # Run subcommand
     run_parser = subparsers.add_parser("run", help="Compile and run main.cpp with TensorFlow Lite")
+    run_parser.add_argument(
+        "-s",
+        "--build-system",
+        type=str,
+        required=True,
+        choices=["cmake", "bazel"],
+        help="Build system to use (cmake or bazel)",
+    )
     run_parser.add_argument(
         "-i", "--install-path", type=Path, required=True, help="Custom destination install path."
     )
@@ -100,4 +108,4 @@ def main() -> None:
     elif args.command == "install":
         install_artifacts(args.build_system, args.branch_tag, args.install_path)
     elif args.command == "run":
-        runner(args.install_path)
+        runner(args.build_system, args.install_path)
