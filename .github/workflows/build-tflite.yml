@@ -8,8 +8,8 @@ on:
         required: true
         default: 'v2.21.0'
         type: string
-      source:
-        description: 'Build system'
+      build_system:
+        description: 'Build system to use'
         required: true
         default: 'bazel'
         type: choice
@@ -24,6 +24,24 @@ on:
         options:
           - x86-64
 
+  workflow_call:
+    inputs:
+      version:
+        description: 'TensorFlow version tag (e.g., v2.21.0)'
+        required: true
+        default: 'v2.21.0'
+        type: string
+      build_system:
+        description: 'Build system to run'
+        required: true
+        default: 'bazel'
+        type: string
+      arch:
+        description: 'Target architecture'
+        required: true
+        default: 'x86-64'
+        type: string
+
   push:
     branches:
       - main
@@ -31,43 +49,72 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - version: "v2.21.0"
-            source: "bazel"
-            arch: "x86-64"
-          - version: "v2.16.1"
-            source: "bazel"
-            arch: "x86-64"
     env:
-      BUILD_VERSION: ${{ github.event.inputs.version || matrix.version }}
-      BUILD_SOURCE: ${{ github.event.inputs.source || matrix.source }}
-      BUILD_ARCH: ${{ github.event.inputs.arch || matrix.arch }}
+      BUILD_VERSION: ${{ github.event.inputs.version || 'v2.21.0' }}
+      BUILD_SYSTEM: ${{ github.event.inputs.build_system || 'bazel' }}
+      BUILD_ARCH: ${{ github.event.inputs.arch || 'x86-64' }}
 
     steps:
-      # 1. Download your repository into the runner
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Install uv
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      # 3. Build TensorFlow Lite using uv
-      - name: Build TensorFlow
+      - name: Build TensorFlow with Bazel
+        if: ${{ env.BUILD_SYSTEM == 'bazel' }}
         run: |
           source setupenv
           uv run tf clone --branch-tag ${{ env.BUILD_VERSION }}
-          uv run tf build --branch-tag ${{ env.BUILD_VERSION }} --${{ env.BUILD_SOURCE }}
-          uv run tf install --branch-tag ${{ env.BUILD_VERSION }} --build-system ${{ env.BUILD_SOURCE }}
-          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}/
+          uv run tf build --branch-tag ${{ env.BUILD_VERSION }} --bazel
+          uv run tf install --branch-tag ${{ env.BUILD_VERSION }} --build-system bazel
+          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--bazel/
 
-      # 4. Publish the artifacts so they can be downloaded
+      - name: Build TensorFlow with CMake
+        if: ${{ env.BUILD_SYSTEM == 'cmake' }}
+        run: |
+          source setupenv
+          uv run tf clone --branch-tag ${{ env.BUILD_VERSION }}
+
+          # Patch CMakeLists.txt to build TensorFlow Lite as a shared library
+          sed -i 's/add_library(tensorflow-lite/add_library(tensorflow-lite SHARED/' clones/${{ env.BUILD_VERSION }}/tensorflow/lite/CMakeLists.txt
+
+          uv run tf build --branch-tag ${{ env.BUILD_VERSION }} --cmake
+
+          # TODO: find a better way to install the built files to a specific directory
+          # Set up output directory
+          OUT=$(pwd)/builds/${{ env.BUILD_VERSION }}--cmake/
+          mkdir -p $OUT/lib $OUT/include/tensorflow/lite $OUT/include/tensorflow/compiler
+
+          # Install shared library
+          cp clones/${{ env.BUILD_VERSION }}/cmake-build-${{ env.BUILD_VERSION }}/libtensorflow-lite.so $OUT/lib/
+
+          # Install files
+          rsync -a --prune-empty-dirs \
+            --include='*/' \
+            --include='*.h' \
+            --include='*.hpp' \
+            --exclude='*' \
+            clones/${{ env.BUILD_VERSION }}/tensorflow/lite/ \
+            $OUT/include/tensorflow/lite/
+
+          rsync -a --prune-empty-dirs \
+            --include='*/' \
+            --include='*.h' \
+            --include='*.hpp' \
+            --exclude='*' \
+            clones/${{ env.BUILD_VERSION }}/tensorflow/compiler/mlir/ \
+            $OUT/include/tensorflow/compiler/mlir/
+
+          # Install flatbuffers headers
+          cp -r clones/${{ env.BUILD_VERSION }}/cmake-build-${{ env.BUILD_VERSION }}/flatbuffers/include/flatbuffers/ $OUT/include/
+
+          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--cmake/
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tensorflow-build-${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}--${{ env.BUILD_ARCH }}
-          path: ${{ github.workspace }}/builds/${{ env.BUILD_VERSION }}--${{ env.BUILD_SOURCE }}/
+          name: tensorflow-build-${{ env.BUILD_VERSION }}--${{ env.BUILD_SYSTEM }}--${{ env.BUILD_ARCH }}
+          path: ${{ github.workspace }}/builds/${{ env.BUILD_VERSION }}--${{ env.BUILD_SYSTEM }}/
           if-no-files-found: error
           retention-days: 1

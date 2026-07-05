@@ -29,19 +29,21 @@ def clone_repository(branch_or_tag: str) -> str:
         raise RuntimeError(f"Failed to clone repository: {e}") from e
 
 
-def build_with_cmake(repo_dir: str, build_target: str, tag: str) -> None:
+def build_with_cmake(repo_dir: Path, build_target: str) -> None:
     """Build TensorFlow using CMake."""
     logging.info(f"Building TensorFlow with CMake (target: {build_target})")
 
-    repo_path = Path(repo_dir).resolve()
-    build_dir = repo_path / f"cmake-build-{tag}"
+    branch_or_tag = repo_dir.name
+    build_dir = repo_dir / f"cmake-build-{branch_or_tag}"
     build_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         # Configure for x86_64 CPU-only build
         cmake = local["cmake"]
         cmake[
-            repo_path / "tensorflow/lite",
+            '-S', repo_dir / "tensorflow/lite",
+            '-B', build_dir,
+            f"-DTENSORFLOW_SOURCE_DIR={repo_dir}",
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_SYSTEM_PROCESSOR=x86_64",
             "-DTFLITE_ENABLE_GPU=OFF",
@@ -50,84 +52,13 @@ def build_with_cmake(repo_dir: str, build_target: str, tag: str) -> None:
             "-DTFLITE_ENABLE_FLEX=OFF",
             "-DTFLITE_ENABLE_XNNPACK=ON",
             "-DBUILD_SHARED_LIBS=ON",
-            "-DTFLITE_ENABLE_INSTALL=ON",
-            f"-DML_DTYPES_SOURCE_DIR={repo_path / 'tensorflow' / 'lite' / 'tools' / 'cmake' / 'modules' / 'ml_dtypes'}",
+            "-DTFLITE_ENABLE_INSTALL=OFF",
+            f"-DML_DTYPES_SOURCE_DIR={repo_dir / 'tensorflow/lite/tools/cmake/modules/ml_dtypes'}",
             f"-DCMAKE_INSTALL_PREFIX={build_dir / 'install'}",
-        ].run_fg(cwd=build_dir)
+        ].run_fg()
 
-        # Build
-        if build_target == "install":
-            # Build the library
-            cmake["--build", ".", "--target", "tensorflow-lite"].run_fg(cwd=build_dir)
-
-            # Stage install directory with library and all headers
-            install_dir = build_dir / "install"
-            lib_dir = install_dir / "lib"
-            include_dir = install_dir / "include"
-            lib_dir.mkdir(parents=True, exist_ok=True)
-            include_dir.mkdir(parents=True, exist_ok=True)
-
-            # Copy the built library (works for both .so and .a)
-            lib_src_so = build_dir / "libtensorflow-lite.so"
-            lib_src_a = build_dir / "libtensorflow-lite.a"
-            if lib_src_so.exists():
-                shutil.copy2(str(lib_src_so), str(lib_dir))
-                logging.info(f"Copied {lib_src_so.name}")
-            elif lib_src_a.exists():
-                shutil.copy2(str(lib_src_a), str(lib_dir))
-                logging.info(f"Copied {lib_src_a.name}")
-            else:
-                logging.warning("Expected library not found")
-
-            # Copy all headers from source tree (TFLite + dependencies)
-            src_include = repo_path / "tensorflow" / "lite"
-            if src_include.exists():
-                for root, _dirs, files in os.walk(src_include):
-                    rel = Path(root).relative_to(src_include)
-                    dest_dir = include_dir / "tensorflow" / "lite" / rel
-                    dest_dir.mkdir(parents=True, exist_ok=True)
-                    for f in files:
-                        if f.endswith(".h") or f.endswith(".hpp"):
-                            shutil.copy2(os.path.join(root, f), str(dest_dir / f))
-
-            # Copy tensorflow core headers (e.g. tensorflow/core/public/version.h)
-            core_src = repo_path / "tensorflow"
-            if core_src.exists():
-                for root, _dirs, files in os.walk(core_src):
-                    rel = Path(root).relative_to(core_src)
-                    dest_dir = include_dir / "tensorflow" / rel
-                    dest_dir.mkdir(parents=True, exist_ok=True)
-                    for f in files:
-                        if f.endswith(".h") or f.endswith(".hpp"):
-                            shutil.copy2(os.path.join(root, f), str(dest_dir / f))
-
-            # Also copy flatbuffers headers
-            flatbuffers_src = (
-                repo_path
-                / "tensorflow"
-                / "lite"
-                / "tools"
-                / "cmake"
-                / "_deps"
-                / "flatbuffers-src"
-                / "include"
-            )
-            if flatbuffers_src.exists():
-                for root, _dirs, files in os.walk(flatbuffers_src):
-                    rel = Path(root).relative_to(flatbuffers_src)
-                    dest_dir = include_dir / rel
-                    dest_dir.mkdir(parents=True, exist_ok=True)
-                    for f in files:
-                        if f.endswith(".h") or f.endswith(".hpp"):
-                            shutil.copy2(os.path.join(root, f), str(dest_dir / f))
-                logging.info("Copied flatbuffers headers")
-
-            logging.info(f"✓ TensorFlow Lite staged into: {install_dir}")
-            logging.info(f"  - Library: {lib_dir}")
-            logging.info(f"  - Headers: {include_dir}")
-        else:
-            cmake["--build", ".", "--target", build_target].run_fg(cwd=build_dir)
-            logging.info("CMake build completed successfully")
+        cmake["--build", build_dir, "--target", build_target].run_fg()
+        logging.info("CMake build completed successfully")
     except Exception as e:
         raise RuntimeError(f"CMake build failed: {e}") from e
 
@@ -232,7 +163,8 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
 
     # Determine source directory based on build system
     if source_type == "cmake":
-        src_dir = Path(branch_or_tag) / f"cmake-build-{branch_or_tag}" / "install"
+        src_dir = CLONES / branch_or_tag / f"cmake-build-{branch_or_tag}"
+        build_dir = CLONES / branch_or_tag / f"cmake-build-{branch_or_tag}"
     elif source_type == "bazel":
         src_dir = CLONES / branch_or_tag / f"bazel-install-{branch_or_tag}"
         build_dir = CLONES / branch_or_tag / f"bazel-build-{branch_or_tag}"
@@ -244,9 +176,13 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
 
     # Create destination and copy artifacts
     install_dst = install_path or BUILDS / f"{branch_or_tag}--{source_type}"
+    include_dst = install_dst / "include"
     install_dst.mkdir(parents=True, exist_ok=True)
 
-    tflite_lib = src_dir / "lib/libtensorflowlite.so"
+    if source_type == "cmake":
+        tflite_lib = src_dir / "libtensorflow-lite.so"
+    else:
+        tflite_lib = src_dir / "lib/libtensorflowlite.so"
     include_src = src_dir / "include"
 
     if not tflite_lib.exists():
@@ -258,14 +194,16 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
     logging.info(f"Copied {tflite_lib.name} to {lib_dst}")
 
     if include_src.exists():
-        include_dst = install_dst / "include"
         include_dst.mkdir(parents=True, exist_ok=True)
         shutil.copytree(str(include_src), str(include_dst), dirs_exist_ok=True)
         logging.info(f"Copied headers to {include_dst}")
 
     if build_dir:
         # Copy flatbuffers headers if they exist
-        flatbuffers_src = build_dir / "external/flatbuffers/include/flatbuffers"
+        if source_type == "cmake":
+            flatbuffers_src = build_dir / "flatbuffers/include/flatbuffers"
+        else:
+            flatbuffers_src = build_dir / "external/flatbuffers/include/flatbuffers"
         if flatbuffers_src.exists():
             flatbuffers_dst = install_dst / "include/flatbuffers"
             flatbuffers_dst.mkdir(parents=True, exist_ok=True)
@@ -316,7 +254,7 @@ def runner(install_path: str) -> None:
             "-o",
             str(RUNNER_FILE.with_name(output_exe)),
             f"-L{lib_dir}",
-            "-ltensorflowlite",
+            "-ltensorflow-lite",
             "-Wl,-rpath," + str(lib_dir),  # Set RPATH for runtime library discovery
         ].run_fg()
         logging.info(f"✓ Successfully compiled to: {output_exe}")

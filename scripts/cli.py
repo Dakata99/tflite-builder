@@ -93,7 +93,7 @@ def main() -> None:
     elif args.command == "build":
         if args.cmake:
             # Hardcode CMake target for TFLite C++ library
-            build_with_cmake(args.branch_tag, CMAKE_TARGET, args.branch_tag)
+            build_with_cmake(CLONES / args.branch_tag, CMAKE_TARGET)
         elif args.bazel:
             # Hardcode Bazel target for the full TFLite shared library
             build_with_bazel(CLONES / args.branch_tag, BAZEL_TARGET)

@@ -29,3 +29,15 @@ jobs:
 
       - name: Type check
         run: uv run dev-check
+
+  build-tflite:
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [v2.21.0, v2.16.1]
+        build_system: [bazel, cmake]
+    uses: ./.github/workflows/build-tflite.yml
+    with:
+      version: ${{ matrix.version }}
+      build_system: ${{ matrix.build_system }}
+      arch: x86-64
