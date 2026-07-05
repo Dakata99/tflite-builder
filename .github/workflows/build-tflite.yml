@@ -50,9 +50,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      BUILD_VERSION: ${{ github.event.inputs.version || 'v2.21.0' }}
-      BUILD_SYSTEM: ${{ github.event.inputs.build_system || 'bazel' }}
-      BUILD_ARCH: ${{ github.event.inputs.arch || 'x86-64' }}
+      BUILD_VERSION: ${{ inputs.version || 'v2.21.0' }}
+      BUILD_SYSTEM: ${{ inputs.build_system || 'bazel' }}
+      BUILD_ARCH: ${{ inputs.arch || 'x86-64' }}
 
     steps:
       - name: Checkout repository
