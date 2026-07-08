@@ -67,31 +67,6 @@ def main() -> None:
         "--bazel", action="store_true", help="Build with Bazel (builds TFLite C++ API)"
     )
 
-    # Install subcommand
-    install_parser = subparsers.add_parser(
-        "install", help="Install staged artifacts to a custom location"
-    )
-    # TODO: make get_builds?
-    install_parser.add_argument(
-        "-b",
-        "--branch-tag",
-        type=str,
-        required=True,
-        help="Repository tag/branch name (e.g., v2.16.1)",
-    ).completer = get_clones  # type: ignore[attr-defined]
-
-    install_parser.add_argument(
-        "-s",
-        "--build-system",
-        type=str,
-        required=True,
-        choices=["cmake", "bazel"],
-        help="Build system to use (cmake or bazel)",
-    )
-    install_parser.add_argument(
-        "-i", "--install-path", type=Path, help="Custom destination install path."
-    )
-
     # Run subcommand
     run_parser = subparsers.add_parser(
         "run", help="Compile and run main.cpp with TensorFlow Lite"
@@ -116,7 +91,5 @@ def main() -> None:
         elif args.bazel:
             # Hardcode Bazel target for the full TFLite shared library
             build_with_bazel(CLONES / args.branch_tag, BAZEL_TARGET)
-    elif args.command == "install":
-        install_artifacts(args.build_system, args.branch_tag, args.install_path)
     elif args.command == "run":
         runner(args.install_path)

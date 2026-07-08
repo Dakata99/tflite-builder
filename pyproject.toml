@@ -46,13 +46,10 @@ namespace_packages = true
 
 exclude = '''
 (?x)(
-    ^build/
-    | ^dist/
+    ^builds/
     | ^\.venv/
     | ^\.mypy_cache/
     | ^\.ruff_cache/
-    | ^led/web-client/
-    | ^generated/
-    | ^third_party/
+    | ^clones/
 )
 '''
