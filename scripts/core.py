@@ -5,13 +5,14 @@ from plumbum import local
 from pathlib import Path
 from .model import MODELS, DEFAULT_MODEL
 
-REPO_ROOT: Path = Path(os.getenv("TFLITE_BUILDER_ROOT"))
+REPO_ROOT: Path = Path(os.getenv("TFLITE_BUILDER_ROOT") or Path(__file__).parent)
 CLONES: Path = REPO_ROOT / "clones"
 BUILDS: Path = REPO_ROOT / "builds"
 SDKS: Path = REPO_ROOT / "sdks"
 RUNNER_FILE: Path = REPO_ROOT / "runner/main.cpp"
 
-def clone_repository(branch_or_tag: str) -> str:
+
+def clone_repository(branch_or_tag: str) -> None:
     """Clone TensorFlow repository for the specified branch/tag."""
     repo_url = "https://github.com/tensorflow/tensorflow.git"
     target_dir: Path = CLONES / branch_or_tag
@@ -23,7 +24,9 @@ def clone_repository(branch_or_tag: str) -> str:
 
     try:
         git = local["git"]
-        git["clone", "--depth", "1", "--branch", branch_or_tag, repo_url, target_dir].run_fg()
+        git[
+            "clone", "--depth", "1", "--branch", branch_or_tag, repo_url, target_dir
+        ].run_fg()
         logging.info(f"Successfully cloned into {target_dir}/")
     except Exception as e:
         raise RuntimeError(f"Failed to clone repository: {e}") from e
@@ -41,8 +44,10 @@ def build_with_cmake(repo_dir: Path, build_target: str) -> None:
         # Configure for x86_64 CPU-only build
         cmake = local["cmake"]
         cmake[
-            '-S', repo_dir / "tensorflow/lite",
-            '-B', build_dir,
+            "-S",
+            repo_dir / "tensorflow/lite",
+            "-B",
+            build_dir,
             f"-DTENSORFLOW_SOURCE_DIR={repo_dir}",
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_SYSTEM_PROCESSOR=x86_64",
@@ -68,15 +73,12 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
     logging.info(f"Building TensorFlow with Bazel (target: {build_target})")
 
     branch_or_tag = repo_dir.name
-    bazel_output_base = repo_dir / f"bazel-build-{branch_or_tag}"
+    bazel_output_base = BUILDS / f"bazel-build-{branch_or_tag}"
 
     try:
         bazel = local["bazel"]
         bazel[
-            f"--output_base={bazel_output_base!s}",
-            "build",
-            '-c', 'opt',
-            build_target
+            f"--output_base={bazel_output_base!s}", "build", "-c", "opt", build_target
         ].with_cwd(repo_dir).run_fg()
         logging.info("Bazel build completed successfully")
 
@@ -88,22 +90,18 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
         include_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy the .so from bazel-bin
-        bazel_bin = (
-            bazel_output_base
-            / "execroot"
-            / "org_tensorflow"
-            / "bazel-out"
-            / "k8-opt"
-            / "bin"
-            / "tensorflow"
-            / "lite"
+        bazel_bin = Path(
+            bazel[f"--output_base={bazel_output_base}", "info", "bazel-bin"]
+            .with_cwd(repo_dir)()
+            .strip()
         )
-        lib_so = bazel_bin / "libtensorflowlite.so"
-        if lib_so.exists():
-            shutil.copy2(str(lib_so), str(lib_dir))
-            logging.info(f"Copied {lib_so.name} to {lib_dir}")
-        else:
-            logging.warning(f"Expected library not found: {lib_so}")
+        lib_so = bazel_bin / "tensorflow/lite/libtensorflowlite.so"
+
+        if not lib_so.exists():
+            raise RuntimeError(f"Expected library not found: {lib_so}")
+
+        shutil.copy2(str(lib_so), str(lib_dir))
+        logging.info(f"Copied {lib_so.name} to {lib_dir}")
 
         # Copy TFLite headers
         src_include = repo_dir / "tensorflow" / "lite"
@@ -128,7 +126,7 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
                         shutil.copy2(os.path.join(root, f), str(dest_dir / f))
 
         # Copy flatbuffers headers from bazel download cache
-        flatbuffers_search = repo_dir / f"bazel-build-{branch_or_tag}" / "_deps"
+        flatbuffers_search = BUILDS / f"bazel-build-{branch_or_tag}" / "_deps"
         if flatbuffers_search.exists():
             for flatbuffers_src in flatbuffers_search.glob("flatbuffers-src/include"):
                 if flatbuffers_src.exists():
@@ -150,7 +148,7 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
         raise RuntimeError(f"Bazel build failed: {e}") from e
 
 
-def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -> None:
+def install_artifacts(source_type: str, branch_or_tag: str, install_path: Path) -> None:
     """
     Install staged artifacts to a custom location.
 
@@ -159,7 +157,9 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
         branch_or_tag: Branch/tag name (e.g., v2.16.1)
         install_path: Destination directory to install to
     """
-    logging.info(f"Installing TensorFlow Lite artifacts (source: {source_type}, tag: {branch_or_tag})")
+    logging.info(
+        f"Installing TensorFlow Lite artifacts (source: {source_type}, tag: {branch_or_tag})"
+    )
 
     # Determine source directory based on build system
     if source_type == "cmake":
@@ -175,8 +175,8 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
         raise RuntimeError(f"Source install directory not found: {src_dir}")
 
     # Create destination and copy artifacts
-    install_dst = install_path or BUILDS / f"{branch_or_tag}--{source_type}"
-    include_dst = install_dst / "include"
+    install_dst: Path = install_path or BUILDS / f"{branch_or_tag}--{source_type}"
+    include_dst: Path = install_dst / "include"
     install_dst.mkdir(parents=True, exist_ok=True)
 
     if source_type == "cmake":
@@ -207,7 +207,9 @@ def install_artifacts(source_type: str, branch_or_tag: str, install_path: str) -
         if flatbuffers_src.exists():
             flatbuffers_dst = install_dst / "include/flatbuffers"
             flatbuffers_dst.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(str(flatbuffers_src), str(flatbuffers_dst), dirs_exist_ok=True)
+            shutil.copytree(
+                str(flatbuffers_src), str(flatbuffers_dst), dirs_exist_ok=True
+            )
             logging.info(f"Copied flatbuffers headers to {flatbuffers_dst}")
 
     logging.info(f"✓ Successfully installed to: {install_dst}")

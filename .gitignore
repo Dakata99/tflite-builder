@@ -7,3 +7,4 @@ builds/
 *.egg-info/
 runner/main
 scripts/__pycache__/
+.devtools/

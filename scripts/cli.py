@@ -20,13 +20,15 @@ BAZEL_TARGET: str = "//tensorflow/lite:libtensorflowlite.so"
 logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
 
 
-def get_clones(prefix, parsed_args, **kwargs):
+def get_clones() -> list[str]:
     """Get a list of cloned TensorFlow repositories."""
     return [d.name for d in CLONES.iterdir() if d.is_dir()]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="tf", description="Clone and build TensorFlow")
+    parser = argparse.ArgumentParser(
+        prog="tf", description="Clone and build TensorFlow"
+    )
 
     # Create subcommands
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -44,15 +46,21 @@ def main() -> None:
     # Build subcommand
     build_parser = subparsers.add_parser("build", help="Build TensorFlow")
     build_parser.add_argument(
-        "-b", "--branch-tag", type=str, required=True, help="Repository directory name (branch/tag)"
-    ).completer = get_clones
+        "-b",
+        "--branch-tag",
+        type=str,
+        required=True,
+        help="Repository directory name (branch/tag)",
+    ).completer = get_clones  # type: ignore[attr-defined]
 
     # Build system subcommands
     build_systems = build_parser.add_mutually_exclusive_group(required=True)
 
     # CMake subcommand (target is hardcoded to the TFLite C++ library)
     _ = build_systems.add_argument(
-        "--cmake", action="store_true", help="Build with CMake (builds TFLite C++ library)"
+        "--cmake",
+        action="store_true",
+        help="Build with CMake (builds TFLite C++ library)",
     )
 
     # Bazel subcommand (target is hardcoded to the TFLite C++ API)
@@ -64,9 +72,15 @@ def main() -> None:
     install_parser = subparsers.add_parser(
         "install", help="Install staged artifacts to a custom location"
     )
+    # TODO: make get_builds?
     install_parser.add_argument(
-        "-b", "--branch-tag", type=str, required=True, help="Repository tag/branch name (e.g., v2.16.1)"
-    ).completer = get_clones # TODO: make get_builds?
+        "-b",
+        "--branch-tag",
+        type=str,
+        required=True,
+        help="Repository tag/branch name (e.g., v2.16.1)",
+    ).completer = get_clones  # type: ignore[attr-defined]
+
     install_parser.add_argument(
         "-s",
         "--build-system",
@@ -80,7 +94,9 @@ def main() -> None:
     )
 
     # Run subcommand
-    run_parser = subparsers.add_parser("run", help="Compile and run main.cpp with TensorFlow Lite")
+    run_parser = subparsers.add_parser(
+        "run", help="Compile and run main.cpp with TensorFlow Lite"
+    )
     run_parser.add_argument(
         "-s",
         "--build-system",
@@ -90,7 +106,11 @@ def main() -> None:
         help="Build system to use (cmake or bazel)",
     )
     run_parser.add_argument(
-        "-i", "--install-path", type=Path, required=True, help="Custom destination install path."
+        "-i",
+        "--install-path",
+        type=Path,
+        required=True,
+        help="Custom destination install path.",
     )
 
     argcomplete.autocomplete(parser)

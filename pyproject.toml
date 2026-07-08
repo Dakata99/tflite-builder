@@ -33,3 +33,26 @@ modelgen = ["tensorflow"]
 
 [egg_info]
 egg_base = ".build"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+show_error_codes = true
+pretty = true
+warn_unused_configs = true
+
+explicit_package_bases = true
+namespace_packages = true
+
+exclude = '''
+(?x)(
+    ^build/
+    | ^dist/
+    | ^\.venv/
+    | ^\.mypy_cache/
+    | ^\.ruff_cache/
+    | ^led/web-client/
+    | ^generated/
+    | ^third_party/
+)
+'''
