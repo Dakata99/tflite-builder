@@ -9,7 +9,6 @@ from .core import (
     build_with_bazel,
     build_with_cmake,
     clone_repository,
-    install_artifacts,
     runner,
 )
 
@@ -20,7 +19,7 @@ BAZEL_TARGET: str = "//tensorflow/lite:libtensorflowlite.so"
 logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
 
 
-def get_clones() -> list[str]:
+def get_clones(**kwargs) -> list[str]:
     """Get a list of cloned TensorFlow repositories."""
     return [d.name for d in CLONES.iterdir() if d.is_dir()]
 
@@ -98,14 +97,6 @@ def main() -> None:
         "run", help="Compile and run main.cpp with TensorFlow Lite"
     )
     run_parser.add_argument(
-        "-s",
-        "--build-system",
-        type=str,
-        required=True,
-        choices=["cmake", "bazel"],
-        help="Build system to use (cmake or bazel)",
-    )
-    run_parser.add_argument(
         "-i",
         "--install-path",
         type=Path,
@@ -128,4 +119,4 @@ def main() -> None:
     elif args.command == "install":
         install_artifacts(args.build_system, args.branch_tag, args.install_path)
     elif args.command == "run":
-        runner(args.build_system, args.install_path)
+        runner(args.install_path)

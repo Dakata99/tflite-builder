@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import json
 from plumbum import local
 from pathlib import Path
 from .model import MODELS, DEFAULT_MODEL
@@ -10,6 +11,16 @@ CLONES: Path = REPO_ROOT / "clones"
 BUILDS: Path = REPO_ROOT / "builds"
 SDKS: Path = REPO_ROOT / "sdks"
 RUNNER_FILE: Path = REPO_ROOT / "runner/main.cpp"
+
+BAZEL_TARGET: str = '//tensorflow/lite:libtensorflowlite.so'
+
+
+def get_config(build_system: str, arch: str):
+    config = REPO_ROOT / f'configs/{arch}.json'
+    with open(config) as fd:
+        metadata = json.load(fd)
+
+    return metadata[build_system]
 
 
 def clone_repository(branch_or_tag: str) -> None:
@@ -37,8 +48,11 @@ def build_with_cmake(repo_dir: Path, build_target: str) -> None:
     logging.info(f"Building TensorFlow with CMake (target: {build_target})")
 
     branch_or_tag = repo_dir.name
-    build_dir = repo_dir / f"cmake-build-{branch_or_tag}"
+    build_dir = BUILDS / f"cmake-build-{branch_or_tag}"
     build_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata = get_config('cmake', 'x86-64')
+    defines = metadata['defines']
 
     try:
         # Configure for x86_64 CPU-only build
@@ -49,15 +63,7 @@ def build_with_cmake(repo_dir: Path, build_target: str) -> None:
             "-B",
             build_dir,
             f"-DTENSORFLOW_SOURCE_DIR={repo_dir}",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DCMAKE_SYSTEM_PROCESSOR=x86_64",
-            "-DTFLITE_ENABLE_GPU=OFF",
-            "-DTFLITE_ENABLE_NNAPI=OFF",
-            "-DTFLITE_ENABLE_METAL=OFF",
-            "-DTFLITE_ENABLE_FLEX=OFF",
-            "-DTFLITE_ENABLE_XNNPACK=ON",
-            "-DBUILD_SHARED_LIBS=ON",
-            "-DTFLITE_ENABLE_INSTALL=OFF",
+            *defines,
             f"-DML_DTYPES_SOURCE_DIR={repo_dir / 'tensorflow/lite/tools/cmake/modules/ml_dtypes'}",
             f"-DCMAKE_INSTALL_PREFIX={build_dir / 'install'}",
         ].run_fg()
@@ -67,40 +73,87 @@ def build_with_cmake(repo_dir: Path, build_target: str) -> None:
     except Exception as e:
         raise RuntimeError(f"CMake build failed: {e}") from e
 
+    install_dst = SDKS / f'{branch_or_tag}--cmake'
+    if not install_dst.exists():
+        install_dst.mkdir(parents=True)
+
+    # Install tensorflow headers
+
+    # Install tensorflow library
+    tflite_lib = build_dir / "libtensorflow-lite.so"
+    lib = install_dst / 'lib'
+    if not lib.exists():
+        lib.mkdir(parents=True)
+    shutil.copy2(tflite_lib, lib)
+
+    # Install flatbuffers headers
+    flatbuffers_src = build_dir / "flatbuffers/include/flatbuffers"
+    flatbuffers_dst = install_dst / "include/flatbuffers"
+    flatbuffers_dst.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        str(flatbuffers_src), str(flatbuffers_dst), dirs_exist_ok=True
+    )
+    logging.info(f"Copied flatbuffers headers to {flatbuffers_dst}")
+
 
 def build_with_bazel(repo_dir: Path, build_target: str) -> None:
     """Build TensorFlow using Bazel."""
     logging.info(f"Building TensorFlow with Bazel (target: {build_target})")
 
+    # Set up bazel command
+    bazel = local['bazel']
+    metadata = get_config('bazel', 'x86-64')
+    config = metadata.get('config', None)
+    args = [
+        '-c', 'opt',
+    ]
+    arch = config or 'x86-64'
+    if config:
+        args.append(f'--config={config}')
+
     branch_or_tag = repo_dir.name
     bazel_output_base = BUILDS / f"bazel-build-{branch_or_tag}"
 
+    # Run bazel command
     try:
         bazel = local["bazel"]
         bazel[
-            f"--output_base={bazel_output_base!s}", "build", "-c", "opt", build_target
+            f"--output_base={bazel_output_base!s}",
+            "build",
+            BAZEL_TARGET,
+            *args
         ].with_cwd(repo_dir).run_fg()
         logging.info("Bazel build completed successfully")
 
         # Stage the built artifacts into a single install folder
-        install_dir = repo_dir / f"bazel-install-{branch_or_tag}"
+        install_dir = SDKS / f"{branch_or_tag}--{arch}--bazel"
         lib_dir = install_dir / "lib"
         include_dir = install_dir / "include"
         lib_dir.mkdir(parents=True, exist_ok=True)
         include_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy the .so from bazel-bin
+        args = []
+        if config:
+            args.append(f'--config={config}')
+
         bazel_bin = Path(
-            bazel[f"--output_base={bazel_output_base}", "info", "bazel-bin"]
+            bazel[
+                f"--output_base={bazel_output_base}",
+                "info",
+                *args,
+                "bazel-bin"
+            ]
             .with_cwd(repo_dir)()
             .strip()
         )
+        logging.debug(f'bazel-bin: {bazel_bin}')
         lib_so = bazel_bin / "tensorflow/lite/libtensorflowlite.so"
 
         if not lib_so.exists():
             raise RuntimeError(f"Expected library not found: {lib_so}")
 
-        shutil.copy2(str(lib_so), str(lib_dir))
+        shutil.copy2(lib_so, lib_dir)
         logging.info(f"Copied {lib_so.name} to {lib_dir}")
 
         # Copy TFLite headers
@@ -126,103 +179,21 @@ def build_with_bazel(repo_dir: Path, build_target: str) -> None:
                         shutil.copy2(os.path.join(root, f), str(dest_dir / f))
 
         # Copy flatbuffers headers from bazel download cache
-        flatbuffers_search = BUILDS / f"bazel-build-{branch_or_tag}" / "_deps"
-        if flatbuffers_search.exists():
-            for flatbuffers_src in flatbuffers_search.glob("flatbuffers-src/include"):
-                if flatbuffers_src.exists():
-                    for root, _dirs, files in os.walk(flatbuffers_src):
-                        rel = Path(root).relative_to(flatbuffers_src)
-                        dest_dir = include_dir / rel
-                        dest_dir.mkdir(parents=True, exist_ok=True)
-                        for f in files:
-                            if f.endswith(".h") or f.endswith(".hpp"):
-                                shutil.copy2(os.path.join(root, f), str(dest_dir / f))
-                    logging.info("Copied flatbuffers headers")
-                    break
+        flatbuffers = BUILDS / f"bazel-build-{branch_or_tag}/external/flatbuffers/include/flatbuffers"
+        shutil.copytree(flatbuffers, include_dir / 'flatbuffers')
 
         logging.info(f"✓ TensorFlow Lite staged into: {install_dir}")
         logging.info(f"  - Library: {lib_dir}")
         logging.info(f"  - Headers: {include_dir}")
     except Exception as e:
-        logging.error(f"Bazel build failed: {e}")
         raise RuntimeError(f"Bazel build failed: {e}") from e
 
 
-def install_artifacts(source_type: str, branch_or_tag: str, install_path: Path) -> None:
-    """
-    Install staged artifacts to a custom location.
-
-    Args:
-        source_type: "cmake" or "bazel" to specify source build system
-        branch_or_tag: Branch/tag name (e.g., v2.16.1)
-        install_path: Destination directory to install to
-    """
-    logging.info(
-        f"Installing TensorFlow Lite artifacts (source: {source_type}, tag: {branch_or_tag})"
-    )
-
-    # Determine source directory based on build system
-    if source_type == "cmake":
-        src_dir = CLONES / branch_or_tag / f"cmake-build-{branch_or_tag}"
-        build_dir = CLONES / branch_or_tag / f"cmake-build-{branch_or_tag}"
-    elif source_type == "bazel":
-        src_dir = CLONES / branch_or_tag / f"bazel-install-{branch_or_tag}"
-        build_dir = CLONES / branch_or_tag / f"bazel-build-{branch_or_tag}"
-    else:
-        raise ValueError(f"Unknown source type: {source_type}")
-
-    if not src_dir.exists():
-        raise RuntimeError(f"Source install directory not found: {src_dir}")
-
-    # Create destination and copy artifacts
-    install_dst: Path = install_path or BUILDS / f"{branch_or_tag}--{source_type}"
-    include_dst: Path = install_dst / "include"
-    install_dst.mkdir(parents=True, exist_ok=True)
-
-    if source_type == "cmake":
-        tflite_lib = src_dir / "libtensorflow-lite.so"
-    else:
-        tflite_lib = src_dir / "lib/libtensorflowlite.so"
-    include_src = src_dir / "include"
-
-    if not tflite_lib.exists():
-        raise RuntimeError(f"TensorFlow Lite library not found: {tflite_lib}")
-
-    lib_dst = install_dst / "lib"
-    lib_dst.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(tflite_lib), str(lib_dst))
-    logging.info(f"Copied {tflite_lib.name} to {lib_dst}")
-
-    if include_src.exists():
-        include_dst.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(str(include_src), str(include_dst), dirs_exist_ok=True)
-        logging.info(f"Copied headers to {include_dst}")
-
-    if build_dir:
-        # Copy flatbuffers headers if they exist
-        if source_type == "cmake":
-            flatbuffers_src = build_dir / "flatbuffers/include/flatbuffers"
-        else:
-            flatbuffers_src = build_dir / "external/flatbuffers/include/flatbuffers"
-        if flatbuffers_src.exists():
-            flatbuffers_dst = install_dst / "include/flatbuffers"
-            flatbuffers_dst.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(
-                str(flatbuffers_src), str(flatbuffers_dst), dirs_exist_ok=True
-            )
-            logging.info(f"Copied flatbuffers headers to {flatbuffers_dst}")
-
-    logging.info(f"✓ Successfully installed to: {install_dst}")
-    logging.info(f"  - Library: {lib_dst}")
-    logging.info(f"  - Headers: {include_dst}")
-
-
-def runner(build_system: str, install_path: str) -> None:
+def runner(install_path: Path) -> None:
     """
     Compile and run a C++ application linked against TensorFlow Lite.
 
     Args:
-        build_system: Build system to use (cmake or bazel)
         install_path: Path to the TensorFlow Lite install directory
     """
     install_dir = Path(install_path).resolve()
@@ -256,7 +227,7 @@ def runner(build_system: str, install_path: str) -> None:
             "-o",
             str(RUNNER_FILE.with_name(output_exe)),
             f"-L{lib_dir}",
-            "-ltensorflow-lite" if build_system == "cmake" else "-ltensorflowlite",
+            "-ltensorflow-lite" if "--cmake" in install_path.stem else "-ltensorflowlite",
             "-Wl,-rpath," + str(lib_dir),  # Set RPATH for runtime library discovery
         ].run_fg()
         logging.info(f"✓ Successfully compiled to: {output_exe}")

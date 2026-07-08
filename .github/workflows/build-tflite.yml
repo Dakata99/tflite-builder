@@ -23,6 +23,7 @@ on:
         type: choice
         options:
           - x86-64
+          - elinux_aarch64
 
   workflow_call:
     inputs:
@@ -68,7 +69,7 @@ jobs:
           uv run tf clone --branch-tag ${{ env.BUILD_VERSION }}
           uv run tf build --branch-tag ${{ env.BUILD_VERSION }} --bazel
           uv run tf install --branch-tag ${{ env.BUILD_VERSION }} --build-system bazel
-          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--bazel/ --build-system bazel
+          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--bazel/
 
       - name: Build TensorFlow with CMake
         if: ${{ env.BUILD_SYSTEM == 'cmake' }}
@@ -120,7 +121,7 @@ jobs:
           # Install flatbuffers headers
           cp -r clones/${{ env.BUILD_VERSION }}/cmake-build-${{ env.BUILD_VERSION }}/flatbuffers/include/flatbuffers/ $OUT/include/
 
-          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--cmake/ --build-system cmake
+          uv run tf run --install-path $(pwd)/builds/${{ env.BUILD_VERSION }}--cmake/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
